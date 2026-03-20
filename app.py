@@ -2,28 +2,42 @@ import streamlit as st
 import pandas as pd
 import joblib
 
-# --- SPRINT 5: PREMIER LEAGUE DEPLOYMENT ---
+# --- SPRINT 6: THE MODEL SHOWDOWN DEPLOYMENT ---
 
 st.set_page_config(page_title="Premier League Predictor", page_icon="⚽", layout="wide")
 
-# 1. Load the Model and Team Mappings
+# 1. Load the Models and Team Mappings
 @st.cache_resource 
 def load_assets():
-    model = joblib.load("pl_model.pkl")
+    # Load all 3 models we just generated in our MLOps pipeline
+    models = {
+        "Logistic Regression": joblib.load("logistic_regression_model.pkl"),
+        "Random Forest": joblib.load("random_forest_model.pkl"),
+        "XGBoost": joblib.load("xgboost_model.pkl")
+    }
+    
     team_mapping = joblib.load("team_mapping.pkl")
-    # Reverse the mapping to easily get the ID from the team name
     reverse_mapping = {v: k for k, v in team_mapping.items()}
-    return model, team_mapping, reverse_mapping
+    return models, team_mapping, reverse_mapping
 
-rf_model, team_mapping, reverse_mapping = load_assets()
+models_dict, team_mapping, reverse_mapping = load_assets()
 team_names = list(team_mapping.values())
 
 # 2. Build the User Interface
-st.title("⚽ Premier League Match Predictor")
-st.markdown("""
-    Welcome to the ML Predictor! This model uses **Random Forest** trained on historical Premier League seasons to predict upcoming matches.
-    Adjust the recent form of both teams to see how it impacts the win probability.
-""")
+st.title("⚽ Premier League Match Predictor - Advanced Edition")
+st.markdown("Now powered by an automated MLOps pipeline and three distinct ML algorithms.")
+
+# THE NEW FEATURE: The Model Selector Dropdown!
+st.sidebar.header("🧠 AI Brain Selection")
+selected_model_name = st.sidebar.selectbox(
+    "Choose your Prediction Engine:", 
+    ["Logistic Regression", "Random Forest", "XGBoost"]
+)
+st.sidebar.markdown(f"*Currently using: **{selected_model_name}***")
+
+# Set the active model based on the user's dropdown choice
+active_model = models_dict[selected_model_name]
+
 st.divider()
 
 # Top Row: Team Selection
@@ -36,7 +50,6 @@ with col_home:
 
 with col_away:
     st.header("✈️ Away Team")
-    # Default away team to a different index so they don't play themselves
     away_team = st.selectbox("Select Away Team", team_names, index=1)
     away_code = reverse_mapping[away_team]
 
@@ -67,11 +80,11 @@ match_day = st.radio("Match Day", ["Saturday", "Sunday"], horizontal=True)
 day_code = 5 if match_day == "Saturday" else 6
 
 # 3. The Prediction Engine
-if st.button("🔮 Predict Match Outcome", type="primary", use_container_width=True):
+# Notice how the button dynamically changes its text based on your model choice!
+if st.button(f"🔮 Predict using {selected_model_name}", type="primary", use_container_width=True):
     if home_team == away_team:
         st.error("Please fix the team selection first.")
     else:
-        # Package the data exactly how the model expects it
         input_data = pd.DataFrame({
             "HomeTeam_Code": [home_code],
             "AwayTeam_Code": [away_code],
@@ -84,20 +97,17 @@ if st.button("🔮 Predict Match Outcome", type="primary", use_container_width=T
             "AST_rolling_3": [ast_rolling]
         })
         
-        # Get predictions
-        prediction = rf_model.predict(input_data)[0]
-        # predict_proba returns [Probability of 0 (Draw/Away), Probability of 1 (Home Win)]
-        prob_home_win = rf_model.predict_proba(input_data)[0][1] 
+        prediction = active_model.predict(input_data)[0]
+        prob_home_win = active_model.predict_proba(input_data)[0][1] 
         
         st.write("---")
         st.subheader("Prediction Results:")
         
-        # We mapped Target=1 to Home Win during training
         if prediction == 1:
-            st.success(f"🏆 The AI predicts **{home_team}** will WIN at home!")
+            st.success(f"🏆 {selected_model_name} predicts **{home_team}** will WIN at home!")
             st.progress(float(prob_home_win))
             st.write(f"Confidence: **{prob_home_win * 100:.1f}%**")
         else:
-            st.info(f"⚖️ The AI predicts a **Draw** or a win for **{away_team}**.")
+            st.info(f"⚖️ {selected_model_name} predicts a **Draw** or a win for **{away_team}**.")
             st.progress(float(1 - prob_home_win))
             st.write(f"Confidence (Away/Draw): **{(1 - prob_home_win) * 100:.1f}%**")
